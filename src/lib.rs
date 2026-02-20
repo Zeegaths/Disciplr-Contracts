@@ -1,3 +1,19 @@
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use soroban_sdk::{testutils::Address as TestAddress, Env, Address, BytesN};
+
+    #[test]
+    fn cancel_vault_fails_for_nonexistent_vault() {
+        let env = Env::default();
+        let contract = DisciplrVault {};
+        let creator = Address::from_account_id(&env, &TestAddress::random(&env));
+        let vault_id = 9999; // Non-existent vault_id
+        // Should fail: cancel_vault returns false or panics
+        let result = contract.cancel_vault(env.clone(), vault_id);
+        assert!(!result, "cancel_vault should fail for non-existent vault_id");
+    }
+}
 #![no_std]
 
 use soroban_sdk::{
