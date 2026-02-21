@@ -62,10 +62,11 @@ impl DisciplrVault {
         };
         let vault_id = 0u32; // Using fixed ID for simplicity; real impl would use counter
         env.storage().instance().set(&VAULT_KEY, &vault);
-        env.events().publish(
-            (Symbol::new(&env, "vault_created"), vault_id),
-            vault,
-        );
+        
+        // Publish event
+        let event_topic = (Symbol::new(&env, "vault_created"), vault_id);
+        env.events().publish(event_topic, vault);
+        
         vault_id
     }
 
@@ -86,10 +87,10 @@ impl DisciplrVault {
         vault.status = VaultStatus::Completed;
         env.storage().instance().set(&VAULT_KEY, &vault);
         
-        env.events().publish(
-            (Symbol::new(&env, "milestone_validated"), vault_id),
-            (),
-        );
+        // Publish event
+        let event_topic = (Symbol::new(&env, "milestone_validated"), vault_id);
+        env.events().publish(event_topic, ());
+        
         true
     }
 
@@ -132,10 +133,10 @@ impl DisciplrVault {
         vault.status = VaultStatus::Failed;
         env.storage().instance().set(&VAULT_KEY, &vault);
         
-        env.events().publish(
-            (Symbol::new(&env, "funds_redirected"), vault_id),
-            (),
-        );
+        // Publish event
+        let event_topic = (Symbol::new(&env, "funds_redirected"), vault_id);
+        env.events().publish(event_topic, ());
+        
         true
     }
 
@@ -155,10 +156,10 @@ impl DisciplrVault {
         vault.status = VaultStatus::Cancelled;
         env.storage().instance().set(&VAULT_KEY, &vault);
         
-        env.events().publish(
-            (Symbol::new(&env, "vault_cancelled"), vault_id),
-            (),
-        );
+        // Publish event
+        let event_topic = (Symbol::new(&env, "vault_cancelled"), vault_id);
+        env.events().publish(event_topic, ());
+        
         true
     }
 
@@ -704,5 +705,219 @@ mod test {
         // Query non-existent vault - should return None since no vault was created
         let result = client.get_vault_state(&999u32);
         assert!(result.is_none());
+    }
+
+    /// Test: Sequential state transitions
+    /// Tests multiple operations in sequence to ensure state consistency.
+    #[test]
+    fn test_sequential_operations() {
+        let (env, contract_id, _creator, vault_id) = setup_test_vault();
+        let client = DisciplrVaultClient::new(&env, &contract_id);
+
+        // Verify initial Active state
+        let vault = client.get_vault_state(&vault_id).expect("Vault should exist");
+        assert_eq!(vault.status, VaultStatus::Active);
+        assert_eq!(vault.amount, 1000i128);
+
+        // Transition to Completed
+        client.release_funds(&vault_id);
+        let vault = client.get_vault_state(&vault_id).expect("Vault should exist");
+        assert_eq!(vault.status, VaultStatus::Completed);
+    }
+
+    /// Test: Create multiple vaults with different amounts
+    /// Ensures vault creation works with various parameter combinations.
+    #[test]
+    fn test_create_vaults_different_amounts() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, DisciplrVault);
+        env.mock_all_auths();
+        let client = DisciplrVaultClient::new(&env, &contract_id);
+
+        // Create vault with small amount
+        let creator1 = Address::generate(&env);
+        let vault_id1 = client.create_vault(
+            &creator1,
+            &100i128,
+            &0u64,
+            &1000u64,
+            &BytesN::from_array(&env, &[1u8; 32]),
+            &None,
+            &Address::generate(&env),
+            &Address::generate(&env),
+        );
+        assert_eq!(vault_id1, 0u32);
+
+        // Create vault with large amount
+        let creator2 = Address::generate(&env);
+        let vault_id2 = client.create_vault(
+            &creator2,
+            &1_000_000i128,
+            &2000u64,
+            &3000u64,
+            &BytesN::from_array(&env, &[2u8; 32]),
+            &None,
+            &Address::generate(&env),
+            &Address::generate(&env),
+        );
+        assert_eq!(vault_id2, 0u32);
+
+        let vault = client.get_vault_state(&vault_id2).expect("Vault should exist");
+        assert_eq!(vault.amount, 1_000_000i128);
+    }
+
+    /// Test: Validate milestone with different vault configurations
+    /// Ensures validation works across different vault setups.
+    #[test]
+    fn test_validate_milestone_various_configs() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, DisciplrVault);
+        env.mock_all_auths();
+        let client = DisciplrVaultClient::new(&env, &contract_id);
+
+        // Create vault with verifier
+        let creator = Address::generate(&env);
+        let verifier = Address::generate(&env);
+        client.create_vault(
+            &creator,
+            &5000i128,
+            &100u64,
+            &5000u64,
+            &BytesN::from_array(&env, &[3u8; 32]),
+            &Some(verifier.clone()),
+            &Address::generate(&env),
+            &Address::generate(&env),
+        );
+
+        // Validate milestone
+        let result = client.validate_milestone(&0u32);
+        assert!(result);
+
+        let vault = client.get_vault_state(&0u32).expect("Vault should exist");
+        assert_eq!(vault.status, VaultStatus::Completed);
+        assert_eq!(vault.verifier, Some(verifier));
+    }
+
+    /// Test: Redirect funds with different timestamps
+    /// Ensures redirect works with various time configurations.
+    #[test]
+    fn test_redirect_funds_various_timestamps() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, DisciplrVault);
+        env.mock_all_auths();
+        let client = DisciplrVaultClient::new(&env, &contract_id);
+
+        // Create vault with specific timestamps
+        let creator = Address::generate(&env);
+        client.create_vault(
+            &creator,
+            &3000i128,
+            &1000u64,
+            &9999u64,
+            &BytesN::from_array(&env, &[4u8; 32]),
+            &None,
+            &Address::generate(&env),
+            &Address::generate(&env),
+        );
+
+        // Redirect funds
+        let result = client.redirect_funds(&0u32);
+        assert!(result);
+
+        let vault = client.get_vault_state(&0u32).expect("Vault should exist");
+        assert_eq!(vault.status, VaultStatus::Failed);
+        assert_eq!(vault.start_timestamp, 1000u64);
+        assert_eq!(vault.end_timestamp, 9999u64);
+    }
+
+    /// Test: Cancel vault with different creators
+    /// Ensures cancellation works for various creator addresses.
+    #[test]
+    fn test_cancel_vault_various_creators() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, DisciplrVault);
+        env.mock_all_auths();
+        let client = DisciplrVaultClient::new(&env, &contract_id);
+
+        // Create vault with specific creator
+        let creator = Address::generate(&env);
+        client.create_vault(
+            &creator,
+            &7500i128,
+            &500u64,
+            &1500u64,
+            &BytesN::from_array(&env, &[5u8; 32]),
+            &None,
+            &Address::generate(&env),
+            &Address::generate(&env),
+        );
+
+        // Cancel vault
+        let result = client.cancel_vault(&0u32);
+        assert!(result);
+
+        let vault = client.get_vault_state(&0u32).expect("Vault should exist");
+        assert_eq!(vault.status, VaultStatus::Cancelled);
+        assert_eq!(vault.creator, creator);
+    }
+
+    /// Test: All status enum values are used
+    /// Ensures complete coverage of VaultStatus enum.
+    #[test]
+    fn test_all_vault_statuses() {
+        let env = Env::default();
+        let contract_id = env.register_contract(None, DisciplrVault);
+        env.mock_all_auths();
+        let client = DisciplrVaultClient::new(&env, &contract_id);
+
+        // Test Active status
+        let creator = Address::generate(&env);
+        client.create_vault(
+            &creator,
+            &1000i128,
+            &0u64,
+            &1000u64,
+            &BytesN::from_array(&env, &[6u8; 32]),
+            &None,
+            &Address::generate(&env),
+            &Address::generate(&env),
+        );
+        let vault = client.get_vault_state(&0u32).unwrap();
+        assert_eq!(vault.status, VaultStatus::Active);
+
+        // Test Completed status
+        client.release_funds(&0u32);
+        let vault = client.get_vault_state(&0u32).unwrap();
+        assert_eq!(vault.status, VaultStatus::Completed);
+
+        // Create new vault for Failed status
+        client.create_vault(
+            &creator,
+            &2000i128,
+            &0u64,
+            &1000u64,
+            &BytesN::from_array(&env, &[7u8; 32]),
+            &None,
+            &Address::generate(&env),
+            &Address::generate(&env),
+        );
+        client.redirect_funds(&0u32);
+        let vault = client.get_vault_state(&0u32).unwrap();
+        assert_eq!(vault.status, VaultStatus::Failed);
+
+        // Create new vault for Cancelled status
+        client.create_vault(
+            &creator,
+            &3000i128,
+            &0u64,
+            &1000u64,
+            &BytesN::from_array(&env, &[8u8; 32]),
+            &None,
+            &Address::generate(&env),
+            &Address::generate(&env),
+        );
+        client.cancel_vault(&0u32);
+        let vault = client.get_vault_state(&0u32).unwrap();
+        assert_eq!(vault.status, VaultStatus::Cancelled);
     }
 }
