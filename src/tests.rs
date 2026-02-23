@@ -42,16 +42,16 @@ fn create_default_vault<'a>(
     let creator = Address::generate(env);
     let success = Address::generate(env);
     let failure = Address::generate(env);
-    let vault_id = client.create_vault(
-        &creator,
-        &1_000_000i128,
-        &1_000u64,
-        &2_000u64,
-        &zero_hash(env),
-        &None,
-        &success,
-        &failure,
-    );
+    let vault_id = client.create_vault(&CreateVaultArgs {
+        creator: creator.clone(),
+        amount: 1_000_000i128,
+        start_timestamp: 1_000u64,
+        end_timestamp: 2_000u64,
+        milestone_hash: zero_hash(env),
+        verifier: None,
+        success_destination: success.clone(),
+        failure_destination: failure.clone(),
+    });
     (client, vault_id)
 }
 
@@ -65,26 +65,26 @@ fn test_create_vault_assigns_sequential_ids() {
     let success = Address::generate(&env);
     let failure = Address::generate(&env);
 
-    let id0 = client.create_vault(
-        &creator,
-        &100i128,
-        &0u64,
-        &1u64,
-        &zero_hash(&env),
-        &None,
-        &success,
-        &failure,
-    );
-    let id1 = client.create_vault(
-        &creator,
-        &200i128,
-        &0u64,
-        &1u64,
-        &zero_hash(&env),
-        &None,
-        &success,
-        &failure,
-    );
+    let id0 = client.create_vault(&CreateVaultArgs {
+        creator: creator.clone(),
+        amount: 100i128,
+        start_timestamp: 0u64,
+        end_timestamp: 1u64,
+        milestone_hash: zero_hash(&env),
+        verifier: None,
+        success_destination: success.clone(),
+        failure_destination: failure.clone(),
+    });
+    let id1 = client.create_vault(&CreateVaultArgs {
+        creator: creator.clone(),
+        amount: 200i128,
+        start_timestamp: 0u64,
+        end_timestamp: 1u64,
+        milestone_hash: zero_hash(&env),
+        verifier: None,
+        success_destination: success.clone(),
+        failure_destination: failure.clone(),
+    });
 
     assert_eq!(id0, 0);
     assert_eq!(id1, 1);
@@ -253,16 +253,16 @@ fn test_validate_milestone_with_verifier() {
     let success = Address::generate(&env);
     let failure = Address::generate(&env);
 
-    let vault_id = client.create_vault(
-        &creator,
-        &500i128,
-        &0u64,
-        &1_000u64,
-        &zero_hash(&env),
-        &Some(verifier.clone()),
-        &success,
-        &failure,
-    );
+    let vault_id = client.create_vault(&CreateVaultArgs {
+        creator: creator.clone(),
+        amount: 500i128,
+        start_timestamp: 0u64,
+        end_timestamp: 1_000u64,
+        milestone_hash: zero_hash(&env),
+        verifier: Some(verifier.clone()),
+        success_destination: success.clone(),
+        failure_destination: failure.clone(),
+    });
 
     assert!(client.validate_milestone(&vault_id, &verifier));
     assert_eq!(
@@ -282,16 +282,16 @@ fn test_validate_milestone_wrong_verifier_rejected() {
     let success = Address::generate(&env);
     let failure = Address::generate(&env);
 
-    let vault_id = client.create_vault(
-        &creator,
-        &500i128,
-        &0u64,
-        &1_000u64,
-        &zero_hash(&env),
-        &Some(verifier),
-        &success,
-        &failure,
-    );
+    let vault_id = client.create_vault(&CreateVaultArgs {
+        creator: creator.clone(),
+        amount: 500i128,
+        start_timestamp: 0u64,
+        end_timestamp: 1_000u64,
+        milestone_hash: zero_hash(&env),
+        verifier: Some(verifier),
+        success_destination: success.clone(),
+        failure_destination: failure.clone(),
+    });
 
     client.validate_milestone(&vault_id, &impostor); // must panic
 }
