@@ -1170,4 +1170,32 @@ mod tests {
         let client = setup.client();
         client.cancel_vault(&999u32, &setup.usdc_token);
     }
+
+    // -----------------------------------------------------------------------
+    // Issue #25: release_funds fails when vault is Failed
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_release_funds_fails_when_vault_failed() {
+        let setup = TestSetup::new();
+        let client = setup.client();
+
+        setup.env.ledger().set_timestamp(setup.start_timestamp);
+        let vault_id = setup.create_default_vault();
+
+        // Past deadline + redirect → Failed
+        setup.env.ledger().set_timestamp(setup.end_timestamp + 1);
+        client.redirect_funds(&vault_id, &setup.usdc_token);
+
+        let vault = client.get_vault_state(&vault_id).unwrap();
+        assert_eq!(vault.status, VaultStatus::Failed);
+
+        // Release on Failed vault must fail with VaultNotActive
+        assert!(
+            client
+                .try_release_funds(&vault_id, &setup.usdc_token)
+                .is_err(),
+            "release_funds must fail on a Failed vault"
+        );
+    }
 }
