@@ -38,6 +38,7 @@ pub struct DisciplrVault;
 #[contractimpl]
 impl DisciplrVault {
     /// Create a new productivity vault. Caller must have approved token transfer to this contract.
+    #[allow(clippy::too_many_arguments)]
     pub fn create_vault(
         env: Env,
         token: Address,
